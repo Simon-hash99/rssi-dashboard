@@ -157,8 +157,7 @@
       <div id="qdevs"></div>
     </div>
     <div class="qrelay">
-      本功能通过「本机中继」实时读机器人信号：需要在这台电脑上先启动
-      <code>.\rssi_relay.ps1</code>（监听 <code>127.0.0.1:8788</code>）。查询结果会写入当前网站的历史批次。
+      本功能通过「本机中继」实时读机器人信号：中继已注册开机自启（任务 RSSI_Relay，监听 <code>127.0.0.1:8789</code>）。查询结果会写入当前网站的历史批次。
     </div>
   </div>
 
@@ -85309,7 +85308,7 @@ document.getElementById("bsel").onchange=function(){ selectBatch(+this.value); }
 
 /* ================= 交互式实时查询（连本机中继） ================= */
 (function(){
-  var RELAY="http://127.0.0.1:8788";
+  var RELAY="http://127.0.0.1:8789";
   var qip=document.getElementById("qip"), qgo=document.getElementById("qgo"),
       qlist=document.getElementById("qlist"), qstatus=document.getElementById("qstatus"),
       qresult=document.getElementById("qresult"), qmeta=document.getElementById("qmeta"),
