@@ -260,48 +260,37 @@
 <!-- 一键脚本生成报告时，会把采集数据内嵌到下面这个空标签里（保持空标签形式便于脚本替换） -->
 <script id="embedded" type="text/plain">
 @@@BEGIN
-@@@BATCH 2026-09-16 15:58:50 | IP 172.20.1.94 | 实时查询 2 台
-@@@FILE bt_rssi_F4_4D_BD_6F_15_CF.csv
-# DEV= MAC=F4:4D:BD:6F:15:CF
-2026-09-16 15:58:50  RSSI = -25 dBm
-@@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
-# DEV= MAC=D0:51:DB:6A:8F:08
-2026-09-16 15:58:50  RSSI = -29 dBm
 @@@BATCH 2026-09-16 15:51:46 | IP 172.20.1.94 | 实时查询 2 台
-@@@FILE bt_rssi_F4_4D_BD_6F_15_CF.csv
-# DEV= MAC=F4:4D:BD:6F:15:CF
-2026-09-16 15:51:46  RSSI = -26 dBm
-@@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
-# DEV= MAC=D0:51:DB:6A:8F:08
-2026-09-16 15:51:46  RSSI = -29 dBm
-@@@BATCH 2026-09-16 15:51:19 | IP 172.20.1.94 | 实时查询 2 台
-@@@FILE bt_rssi_F4_4D_BD_6F_15_CF.csv
-# DEV= MAC=F4:4D:BD:6F:15:CF
-2026-09-16 15:51:19  RSSI = -24 dBm
-@@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
-# DEV= MAC=D0:51:DB:6A:8F:08
-2026-09-16 15:51:19  RSSI = -42 dBm
-@@@BATCH 2026-09-16 15:49:41 | IP 172.20.1.94 | 实时查询 2 台
-@@@FILE bt_rssi_F4_4D_BD_6F_15_CF.csv
-# DEV= MAC=F4:4D:BD:6F:15:CF
-2026-09-16 15:49:41  RSSI = -30 dBm
-@@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
-# DEV= MAC=D0:51:DB:6A:8F:08
-2026-09-16 15:49:41  RSSI = -27 dBm
-@@@BATCH 2026-09-16 15:47:13 | IP 172.20.1.94 | 实时查询 2 台
-@@@FILE bt_rssi_F4_4D_BD_6F_15_CF.csv
-# DEV= MAC=F4:4D:BD:6F:15:CF
-2026-09-16 15:47:13  RSSI = -24 dBm
-@@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
-# DEV= MAC=D0:51:DB:6A:8F:08
-2026-09-16 15:47:13  RSSI = -41 dBm
-@@@BATCH 2026-09-16 15:46:54 | IP 172.20.1.94 | 实时查询 2 台
 @@@FILE bt_rssi_F4_4D_BD_6F_15_CF.csv
 # DEV= MAC=F4:4D:BD:6F:15:CF
 2026-09-16 15:46:54  RSSI = -25 dBm
 @@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
 # DEV= MAC=D0:51:DB:6A:8F:08
 2026-09-16 15:46:54  RSSI = -33 dBm
+@@@FILE bt_rssi_F4_4D_BD_6F_15_CF.csv
+# DEV= MAC=F4:4D:BD:6F:15:CF
+2026-09-16 15:47:13  RSSI = -24 dBm
+@@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
+# DEV= MAC=D0:51:DB:6A:8F:08
+2026-09-16 15:47:13  RSSI = -41 dBm
+@@@FILE bt_rssi_F4_4D_BD_6F_15_CF.csv
+# DEV= MAC=F4:4D:BD:6F:15:CF
+2026-09-16 15:49:41  RSSI = -30 dBm
+@@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
+# DEV= MAC=D0:51:DB:6A:8F:08
+2026-09-16 15:49:41  RSSI = -27 dBm
+@@@FILE bt_rssi_F4_4D_BD_6F_15_CF.csv
+# DEV= MAC=F4:4D:BD:6F:15:CF
+2026-09-16 15:51:19  RSSI = -24 dBm
+@@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
+# DEV= MAC=D0:51:DB:6A:8F:08
+2026-09-16 15:51:19  RSSI = -42 dBm
+@@@FILE bt_rssi_F4_4D_BD_6F_15_CF.csv
+# DEV= MAC=F4:4D:BD:6F:15:CF
+2026-09-16 15:51:46  RSSI = -26 dBm
+@@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
+# DEV= MAC=D0:51:DB:6A:8F:08
+2026-09-16 15:51:46  RSSI = -29 dBm
 @@@BATCH 2026-09-16 15:37:34 | IP 172.20.1.94 | 重启恢复补采
 @@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
 # DEV= MAC=D0:51:DB:6A:8F:08
@@ -86892,7 +86881,12 @@ document.getElementById("bsel").onchange=function(){ selectBatch(+this.value); }
     call("/once", ip?("ip="+encodeURIComponent(ip)):"")
       .then(function(j){
         qgo.disabled=false;
-        if(j.ok){ setStatus("查询成功", "ok"); showResult(j.ip, j.time, j.devices, j.saved); }
+        if(j.ok){
+          var savedOk = j.saved && j.saved.indexOf("已入库")===0;
+          setStatus(savedOk ? "查询成功 ｜ 已入库推送，约 1 分钟后本页自动刷新出最新曲线" : "查询成功", "ok");
+          showResult(j.ip, j.time, j.devices, j.saved);
+          if(savedOk && !window.__qReloadTimer){ window.__qReloadTimer=setTimeout(function(){ location.href=location.pathname+"?t="+Date.now(); }, 55000); }
+        }
         else { setStatus("查询失败："+(j.error||"未知错误"), "err"); }
       })
       .catch(function(e){ qgo.disabled=false; setStatus("连不上中继（请确认本机已启动 rssi_relay.ps1）："+e.message, "err"); });
