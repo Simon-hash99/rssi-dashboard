@@ -108,6 +108,32 @@
   #err { color:var(--bad); font-size:13px; margin-top:8px; min-height:16px; }
   .sub { color:var(--muted); font-size:13px; margin-top:6px; }
   .foot { color:#9aa6ba; font-size:12px; text-align:center; margin-top:20px; }
+
+  /* 交互式查询面板 */
+  .qpanel { border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin-bottom:16px;
+            background:linear-gradient(120deg,#f0f6ff,#f6f8fc); box-shadow:var(--shadow); }
+  .qpanel h2 { font-size:15px; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+  .qpanel h2::before { content:""; width:4px; height:16px; border-radius:2px; background:#7c3aed; }
+  .qrow { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .qrow input[type=text] { flex:1 1 240px; min-width:0; padding:9px 12px; border:1px solid var(--line);
+        border-radius:8px; font-size:14px; background:#fff; color:var(--ink); font-family:Consolas,monospace; }
+  .qrow input[type=number] { width:90px; padding:9px 10px; border:1px solid var(--line);
+        border-radius:8px; font-size:14px; background:#fff; color:var(--ink); font-family:Consolas,monospace; }
+  .qrow button { margin-top:0; background:#7c3aed; }
+  .qrow button.ghost { background:#64748b; }
+  .qrow button:disabled { opacity:.5; cursor:not-allowed; }
+  .qstatus { font-size:13px; margin-top:10px; min-height:18px; color:var(--muted); }
+  .qstatus.ok { color:var(--good); }
+  .qstatus.err { color:var(--bad); }
+  .qresult { margin-top:12px; }
+  .qresult .qmeta { font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .qdev { display:flex; align-items:center; gap:12px; padding:8px 12px; border:1px solid var(--line);
+          border-radius:10px; margin-bottom:6px; background:#fff; }
+  .qdev .mac { font-family:Consolas,monospace; font-size:13px; flex:1; }
+  .qdev .rssi { font-weight:700; font-size:15px; font-variant-numeric:tabular-nums; }
+  .qdev .rssi b { font-weight:800; }
+  .qrelay { font-size:12px; color:#8b98ad; margin-top:10px; line-height:1.6; }
+  .qrelay code { background:#eef1f5; padding:1px 6px; border-radius:4px; font-size:11px; }
 </style>
 </head>
 <body>
@@ -116,6 +142,24 @@
   <div class="hero">
     <h1>📶 蓝牙 RSSI 采集分析报告</h1>
     <div class="meta" id="herometa">生成时间：<b id="genat">—</b> ｜ 设备：<b id="ndev">—</b> ｜ 样点：<b id="npts">—</b></div>
+  </div>
+
+  <div class="qpanel" id="qpanel">
+    <h2>🔎 实时查询 · 查任意机器的蓝牙信号</h2>
+    <div class="qrow">
+      <input type="text" id="qip" placeholder="机器 IP（例 172.20.1.94，或 user@ip:port）">
+      <button id="qgo">查询信号</button>
+      <button class="ghost" id="qlist">列出已连接设备</button>
+    </div>
+    <div class="qstatus" id="qstatus"></div>
+    <div class="qresult" id="qresult" style="display:none">
+      <div class="qmeta" id="qmeta"></div>
+      <div id="qdevs"></div>
+    </div>
+    <div class="qrelay">
+      本功能通过「本机中继」实时读机器人信号：需要在这台电脑上先启动
+      <code>.\rssi_relay.ps1</code>（监听 <code>127.0.0.1:8788</code>）。查询结果会写入当前网站的历史批次。
+    </div>
   </div>
 
   <div class="card" id="batchcard" style="display:none">
@@ -217,6 +261,13 @@
 <!-- 一键脚本生成报告时，会把采集数据内嵌到下面这个空标签里（保持空标签形式便于脚本替换） -->
 <script id="embedded" type="text/plain">
 @@@BEGIN
+@@@BATCH 2026-09-16 14:38:09 | IP 172.20.1.94 | 实时查询 2 台
+@@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
+# DEV= MAC=D0:51:DB:6A:8F:08
+2026-09-16 14:38:09  RSSI = -42 dBm
+@@@FILE bt_rssi_AA_BB_CC_DD_EE_FF.csv
+# DEV= MAC=AA:BB:CC:DD:EE:FF
+2026-09-16 14:38:09  RSSI = -58 dBm
 @@@BATCH 2026-09-16 14:01:05 | IP 172.20.1.94
 @@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
 # DEV= MAC=D0:51:DB:6A:8F:08
@@ -85262,6 +85313,71 @@ function loadDemo(){
 document.getElementById("bprev").onclick=function(){ if(batches.length) selectBatch(curBatch-1); };
 document.getElementById("bnext").onclick=function(){ if(batches.length) selectBatch(curBatch+1); };
 document.getElementById("bsel").onchange=function(){ selectBatch(+this.value); };
+
+/* ================= 交互式实时查询（连本机中继） ================= */
+(function(){
+  var RELAY="http://127.0.0.1:8788";
+  var qip=document.getElementById("qip"), qgo=document.getElementById("qgo"),
+      qlist=document.getElementById("qlist"), qstatus=document.getElementById("qstatus"),
+      qresult=document.getElementById("qresult"), qmeta=document.getElementById("qmeta"),
+      qdevs=document.getElementById("qdevs");
+  function setStatus(msg, cls){ qstatus.textContent=msg; qstatus.className="qstatus"+(cls?" "+cls:""); }
+  function rssiClass(v){ if(v>-60) return "#16a34a"; if(v>=-75) return "#65a30d"; if(v>=-85) return "#d97706"; return "#dc2626"; }
+  function rssiLabel(v){ if(v>-60) return "强"; if(v>=-75) return "良好"; if(v>=-85) return "偏弱"; return "危险"; }
+  function valIP(){ return (qip.value||"").trim() || ""; }
+
+  function showResult(ip, time, devs, saved){
+    qresult.style.display="block";
+    var saveTxt = saved ? (" ｜ " + saved) : "";
+    qmeta.textContent="机器 "+ip+" ｜ 时间 "+time+" ｜ 已连接 "+devs.length+" 台设备"+saveTxt;
+    qdevs.innerHTML="";
+    devs.forEach(function(d){
+      var c=rssiClass(d.rssi), lb=rssiLabel(d.rssi);
+      var row=document.createElement("div"); row.className="qdev";
+      var mac=document.createElement("span"); mac.className="mac"; mac.textContent=d.mac;
+      var r=document.createElement("span"); r.className="rssi";
+      r.innerHTML='<b style="color:'+c+'">'+d.rssi+' dBm</b> <span style="font-size:12px;color:'+c+'">'+lb+'</span>';
+      row.appendChild(mac); row.appendChild(r);
+      qdevs.appendChild(row);
+    });
+  }
+
+  function call(path, params){
+    var url=RELAY+path+(params?"?"+params:"");
+    return fetch(url,{mode:"cors"}).then(function(r){ return r.json(); });
+  }
+
+  qgo.onclick=function(){
+    var ip=valIP();
+    qgo.disabled=true; setStatus("正在查询 "+ip+" 的实时信号 ...");
+    call("/once", ip?("ip="+encodeURIComponent(ip)):"")
+      .then(function(j){
+        qgo.disabled=false;
+        if(j.ok){ setStatus("查询成功", "ok"); showResult(j.ip, j.time, j.devices, j.saved); }
+        else { setStatus("查询失败："+(j.error||"未知错误"), "err"); }
+      })
+      .catch(function(e){ qgo.disabled=false; setStatus("连不上中继（请确认本机已启动 rssi_relay.ps1）："+e.message, "err"); });
+  };
+
+  qlist.onclick=function(){
+    var ip=valIP();
+    qlist.disabled=true; setStatus("正在列出 "+ip+" 的已连接设备 ...");
+    call("/list", ip?("ip="+encodeURIComponent(ip)):"")
+      .then(function(j){
+        qlist.disabled=false;
+        if(j.ok){
+          setStatus("该机器已连接 "+j.devices.length+" 台设备", "ok");
+          if(j.devices.length){ showResult(j.ip, "—", j.devices.map(function(m){ return {mac:m, rssi:0}; }).map(function(d){ return {mac:d.mac, rssi:0}; })); }
+          else { qresult.style.display="block"; qmeta.textContent="机器 "+j.ip+" 当前没有已连接的蓝牙设备"; qdevs.innerHTML=""; }
+        } else { setStatus("列出失败："+(j.error||"未知错误"), "err"); }
+      })
+      .catch(function(e){ qlist.disabled=false; setStatus("连不上中继："+e.message, "err"); });
+  };
+
+  // 回车触发查询
+  qip.addEventListener("keydown", function(e){ if(e.key==="Enter") qgo.click(); });
+})();
+
 /* 自动绕缓存刷新：标签页在后台超过 5 分钟就带时间戳重载（绕过浏览器/CDN 缓存），
    切回来即最新数据；前台查看时不打扰，避免打断拖动回看 */
 (function(){
