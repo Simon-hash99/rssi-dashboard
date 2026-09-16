@@ -196,6 +196,7 @@
       </table>
     </div>
     <div id="detwrap" style="display:none">
+      <div id="detnote" style="font-size:12px;color:#8b98ad;margin:2px 0 6px"></div>
       <div class="scroll"><table id="dettbl">
         <thead><tr id="deth"></tr></thead>
         <tbody id="detb"></tbody>
@@ -76073,7 +76074,12 @@ var series=[];        // 当前显示的批次数据 [{name, mac, points:[{t,v}]
 var batches=[];       // 全部历史批次 [{label, meta, npts, series}]
 var curBatch=0;       // 当前选中批次（0 = 最新）
 var hidden={};        // name -> true
-var hoverIdx=-1, showVals=false;
+var hoverIdx=-1, showVals=false, STATS_CACHE=null;
+/* 统计缓存：stat() 要排序大数组，只算一次；悬停/重绘复用，避免每次鼠标移动都重算 */
+function getStats(){
+  if(!STATS_CACHE) STATS_CACHE=series.map(function(d){ return {d:d, s:stat(d)}; });
+  return STATS_CACHE;
+}
 var viewA=0, viewB=0, viewInit=false;   // 图表显示的时间窗口（全局样点序号，闭区间）
 function maxLenOf(stats){ var m=1; stats.forEach(function(x){ if(x.d.points.length>m) m=x.d.points.length; }); return m; }
 function timeAtIdx(stats,i){
@@ -76288,6 +76294,7 @@ function buildSummary(stats){
 /* ================= 渲染 ================= */
 function render(){
   ERR.textContent="";
+  STATS_CACHE=null;
   if(!series.length){
     ERR.textContent="没有解析到有效数据——请上传 CSV 或点「先看示例」";
     document.getElementById("ndev").textContent="0 台";
@@ -76301,7 +76308,7 @@ function render(){
     if(cv.getContext) cv.getContext("2d").clearRect(0,0,cv.width,cv.height);
     return;
   }
-  var stats=series.map(function(d){ return {d:d, s:stat(d)}; });
+  var stats=getStats();
 
   var allN=0, allBelow=0, best=-999, worst=0;
   stats.forEach(function(x){ allN+=x.s.n; allBelow+=x.s.below75; if(x.s.min>best) best=x.s.min; if(x.s.max<worst) worst=x.s.max; });
@@ -76391,19 +76398,18 @@ function setView(a,b,stats){
 }
 (function(){
   var RGA=document.getElementById("rga"), RGB=document.getElementById("rgb");
-  function st(){ return series.map(function(d){ return {d:d,s:stat(d)}; }); }
   RGA.addEventListener("input", function(){
     if(!series.length) return;
     var v=+RGA.value;
     var gap=Math.min(10, viewB);
     if(v>viewB-gap) v=viewB-gap;
     if(v<0) v=0;
-    viewA=v; var s=st(); updateRangeUI(s); drawChart(s);
+    viewA=v; var s=getStats(); updateRangeUI(s); drawChart(s);
   });
   RGB.addEventListener("input", function(){
     if(!series.length) return;
     var v=+RGB.value;
-    var s=st();
+    var s=getStats();
     var ml=maxLenOf(s);
     var gap=Math.min(10, ml-1-viewA);
     if(v<viewA+gap) v=viewA+gap;
@@ -76427,6 +76433,19 @@ function buildDetail(stats){
   if(!vis.length) vis=stats;
   var maxLen=1;
   vis.forEach(function(x){ if(x.d.points.length>maxLen) maxLen=x.d.points.length; });
+  /* 性能关键：DOM 行数封顶 300。超过时按当前时间窗取等步长抽样；
+     缩小时间窗（顶部滑块）后 stride 自然变小，能逐点查看 */
+  var CAP=300;
+  var a=Math.max(0,viewA), b=Math.min(maxLen-1,viewB);
+  if(!(a<=b) || isNaN(a) || isNaN(b)){ a=0; b=maxLen-1; }
+  var span=b-a+1;
+  var stride=Math.max(1, Math.ceil(span/CAP));
+  var note=document.getElementById("detnote");
+  if(note){
+    note.textContent = (stride>1)
+      ? ("当前窗口共 "+span.toLocaleString()+" 个样点，为保持流畅按每 "+stride+" 个取 1 个显示（"+Math.ceil(span/stride)+" 行）。把顶部时间窗滑块缩小后可逐点查看。")
+      : ("显示第 "+(a+1)+" ~ "+(b+1)+" 个样点，共 "+span+" 行");
+  }
   var head='<th class="num">#</th><th>时间</th>';
   vis.forEach(function(x,i){
     head+='<th class="num"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+
@@ -76434,7 +76453,7 @@ function buildDetail(stats){
   });
   document.getElementById("deth").innerHTML=head;
   var rows="";
-  for(var r=0;r<maxLen;r++){
+  for(var r=a;r<=b;r+=stride){
     var t=null;
     for(var k=0;k<vis.length;k++){ if(vis[k].d.points[r]&&vis[k].d.points[r].t!==null){ t=vis[k].d.points[r].t; break; } }
     rows+='<tr><td class="num" style="color:#9aa6ba">'+(r+1)+'</td><td>'+(fmtT(t)||"—")+'</td>';
@@ -76476,6 +76495,22 @@ function chartScales(stats,W,H){
   function Y(v){ return padT+(H-padT-padB)*((vmax-v)/(vmax-vmin)); }
   return {padL:padL,padR:padR,padT:padT,padB:padB,vmin:vmin,vmax:vmax,maxLen:winLen,a:a,b:b,X:X,Y:Y};
 }
+/* 降采样：窗口点数超过 maxN 时按桶取「最大+最小」两个点，保住尖峰形状，绘制点数从几万降到几千 */
+function dsPts(pts, st, en, maxN){
+  var n=en-st+1;
+  if(n<=maxN){ var out=[]; for(var i=st;i<=en;i++) out.push([i,pts[i].v]); return out; }
+  var nb=Math.max(2, maxN>>1), out=[];
+  var bl=Math.floor(n/nb);
+  for(var b=0;b<nb;b++){
+    var a0=st+b*bl, a1=(b===nb-1)?en:(a0+bl-1);
+    var mi=a0, ma=a0;
+    for(var k=a0+1;k<=a1;k++){ if(pts[k].v<pts[mi].v) mi=k; if(pts[k].v>pts[ma].v) ma=k; }
+    if(mi<ma){ out.push([mi,pts[mi].v]); out.push([ma,pts[ma].v]); }
+    else out.push([ma,pts[ma].v]);
+  }
+  return out;
+}
+
 function drawChart(stats){
   var c=chartCanvas(), ctx=c.ctx, W=c.W, H=c.H;
   var sc=chartScales(stats,W,H);
@@ -76517,14 +76552,15 @@ function drawChart(stats){
     var st=Math.max(sc.a,0), en=Math.min(sc.b, pts.length-1);
     var n=en-st+1;
     if(n<1) return;
+    var darr=dsPts(pts, st, en, 1400);  // 最多画约 2800 个点，形状与全量一致
     var lw = n>600?1.1:(n>150?1.5:2);
-    if(n>1){
+    if(darr.length>1){
       ctx.beginPath();
-      ctx.moveTo(sc.X(st), sc.Y(pts[st].v));
-      for(var k=st+1;k<=en;k++) ctx.lineTo(sc.X(k), sc.Y(pts[k].v));
+      ctx.moveTo(sc.X(darr[0][0]), sc.Y(darr[0][1]));
+      for(var k=1;k<darr.length;k++) ctx.lineTo(sc.X(darr[k][0]), sc.Y(darr[k][1]));
       ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.lineJoin="round"; ctx.lineCap="round"; ctx.stroke();
       // 面积
-      ctx.lineTo(sc.X(en), sc.padT+plotH); ctx.lineTo(sc.X(st), sc.padT+plotH); ctx.closePath();
+      ctx.lineTo(sc.X(darr[darr.length-1][0]), sc.padT+plotH); ctx.lineTo(sc.X(darr[0][0]), sc.padT+plotH); ctx.closePath();
       var gr=ctx.createLinearGradient(0,sc.padT,0,sc.padT+plotH);
       gr.addColorStop(0, col+"22"); gr.addColorStop(1, col+"05");
       ctx.fillStyle=gr; ctx.fill();
@@ -76536,15 +76572,15 @@ function drawChart(stats){
         ctx.strokeStyle=col; ctx.lineWidth=1.4; ctx.stroke();
       }
     }
-    // 趋势线（滑动平均，窗口自适应）：只在数据多时画
-    if(n>60){
-      var w=Math.max(3, Math.round(n/80)), sum=0;
+    // 趋势线（滑动平均，窗口自适应）：基于降采样结果，开销恒定
+    if(darr.length>60){
+      var w=Math.max(3, Math.round(darr.length/80)), sum=0;
       ctx.beginPath();
-      for(var i2=st;i2<=en;i2++){
-        sum+=pts[i2].v;
-        if(i2-st>=w) sum-=pts[i2-w].v;
-        var av=sum/Math.min(i2-st+1,w);
-        if(i2===st) ctx.moveTo(sc.X(i2), sc.Y(av)); else ctx.lineTo(sc.X(i2), sc.Y(av));
+      for(var i2=0;i2<darr.length;i2++){
+        sum+=darr[i2][1];
+        if(i2>=w) sum-=darr[i2-w][1];
+        var av=sum/Math.min(i2+1,w);
+        if(i2===0) ctx.moveTo(sc.X(darr[i2][0]), sc.Y(av)); else ctx.lineTo(sc.X(darr[i2][0]), sc.Y(av));
       }
       ctx.strokeStyle=col; ctx.lineWidth=2.6; ctx.globalAlpha=.9; ctx.stroke(); ctx.globalAlpha=1;
     }
@@ -76619,7 +76655,7 @@ function drawChart(stats){
     if(!series.length) return;
     var rect=cv.getBoundingClientRect();
     var mx=ev.clientX-rect.left, my=ev.clientY-rect.top;
-    var stats=series.map(function(d){ return {d:d,s:stat(d)}; });
+    var stats=getStats();
     var sc=chartScales(stats, rect.width, 430);
     var padL=sc.padL, plotW=rect.width-sc.padL-sc.padR;
     if(mx<padL-6||mx>rect.width-sc.padR+6||my<sc.padT||my>430-sc.padB){ tip.style.display="none"; if(hoverIdx!==-1){ hoverIdx=-1; drawChart(stats); } return; }
@@ -76649,7 +76685,7 @@ function drawChart(stats){
 
 function redraw(){
   if(!series.length) return;
-  var stats=series.map(function(d){ return {d:d,s:stat(d)}; });
+  var stats=getStats();
   drawChart(stats);
 }
 var rsT=null;
