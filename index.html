@@ -85262,6 +85262,18 @@ function loadDemo(){
 document.getElementById("bprev").onclick=function(){ if(batches.length) selectBatch(curBatch-1); };
 document.getElementById("bnext").onclick=function(){ if(batches.length) selectBatch(curBatch+1); };
 document.getElementById("bsel").onchange=function(){ selectBatch(+this.value); };
+/* 自动绕缓存刷新：标签页在后台超过 5 分钟就带时间戳重载（绕过浏览器/CDN 缓存），
+   切回来即最新数据；前台查看时不打扰，避免打断拖动回看 */
+(function(){
+  var loadedAt=Date.now();
+  function hardRefresh(){ location.href=location.pathname+"?t="+Date.now(); }
+  setInterval(function(){
+    if(document.hidden && Date.now()-loadedAt>4*60*1000) hardRefresh();
+  },60*1000);
+  document.addEventListener("visibilitychange",function(){
+    if(!document.hidden && Date.now()-loadedAt>5*60*1000) hardRefresh();
+  });
+})();
 </script>
 </body>
 </html>
