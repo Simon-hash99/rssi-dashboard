@@ -1017,18 +1017,55 @@ function loadDemo(){
 
   // 无内嵌数据 → 同时拉 history.json（历史回看+查询批次，电脑端维护）和 data.json（机器人直推实时），合并展示
   function jget(u){ return fetch(u, {mode:"cors"}).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }); }
-  Promise.all([ jget("history.json?t="+Date.now()), jget("data.json?t="+Date.now()) ])
-    .then(function(rs){
-      var hist=rs[0], live=rs[1], texts=[];
-      if(live && live.batches){ for(var k=0;k<live.batches.length;k++){ if(live.batches[k].text) texts.push(live.batches[k].text); } }
-      if(hist && hist.batches){ for(var i=0;i<hist.batches.length;i++){ if(hist.batches[i].text) texts.push(hist.batches[i].text); } }
-      if(!texts.length) return;   // 两个数据源都没有 → 保持空态
-      var upd=(live && live.updated) || (hist && hist.updated) || "?";
-      if(applyTxt(texts.join("\n"), "已载入实时数据（机器人直推，更新于 "+upd+"）｜ 下拉可回看历史批次")){
-        var t=document.getElementById("lastupd");
-        if(t) t.textContent="最后数据点："+upd;
-      }
-    });
+
+  // 用「实时数据文本」刷新当前批次（保持用户正看的批次不变），返回是否成功
+  var liveStamp="";   // 上次已应用的数据时间戳，用于跳过重复数据
+  function refreshLive(texts, upd){
+    if(!texts.length) return false;
+    var joined=texts.join("\n");
+    if(joined===liveStamp) return false;   // 数据没变，跳过
+    liveStamp=joined;
+    var curLabel=batches.length&&curBatch<batches.length?batches[curBatch].label:null;
+    var prevMeta=batches.length&&curBatch<batches.length?batches[curBatch].meta:null;
+    batches=parseBatches(joined);
+    // 若用户正在看某一历史批次，尽量保持它被选中；否则回到最新(0)
+    var target=0;
+    for(var bi=0;bi<batches.length;bi++){
+      if((batches[bi].label===curLabel)||(prevMeta&&batches[bi].meta===prevMeta)){ target=bi; break; }
+    }
+    curBatch=target;
+    DROP.textContent="已载入实时数据（机器人直推，更新于 "+upd+"）｜ 每 25 秒自动刷新｜下拉可回看历史批次";
+    DROP.style.borderStyle="solid"; DROP.style.borderColor="#cbd5e1";
+    document.getElementById("upname").textContent=batches.length>1?("页面 "+batches.length+" 个批次"):"页面采集数据";
+    document.getElementById("upn").textContent=batches.length?batches[0].series.length:0;
+    document.getElementById("fmthint").style.display="block";
+    document.getElementById("clearbtn").style.display="inline-block";
+    selectBatch(target);
+    var t=document.getElementById("lastupd");
+    if(t) t.textContent="最后数据点："+upd;
+    return true;
+  }
+  function loadLive(first){
+    Promise.all([ jget("history.json?t="+Date.now()), jget("data.json?t="+Date.now()) ])
+      .then(function(rs){
+        var hist=rs[0], live=rs[1], texts=[];
+        if(live && live.batches){ for(var k=0;k<live.batches.length;k++){ if(live.batches[k].text) texts.push(live.batches[k].text); } }
+        if(hist && hist.batches){ for(var i=0;i<hist.batches.length;i++){ if(hist.batches[i].text) texts.push(hist.batches[i].text); } }
+        if(!texts.length) return;
+        var upd=(live && live.updated) || (hist && hist.updated) || "?";
+        if(first){
+          if(applyTxt(texts.join("\n"), "已载入实时数据（机器人直推，更新于 "+upd+"）｜ 每 25 秒自动刷新｜下拉可回看历史批次")){
+            var t=document.getElementById("lastupd");
+            if(t) t.textContent="最后数据点："+upd;
+          }
+        } else {
+          refreshLive(texts, upd);
+        }
+      });
+  }
+  loadLive(true);
+  // 每 25 秒静默刷新实时数据（不整页重载、不打断用户操作、保持当前批次）
+  setInterval(function(){ loadLive(false); }, 25000);
 })();
 /* 批次切换按钮 */
 document.getElementById("bprev").onclick=function(){ if(batches.length) selectBatch(curBatch-1); };
