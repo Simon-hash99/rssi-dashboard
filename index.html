@@ -215,8 +215,8 @@
 </div>
 
 <!-- 一键脚本生成报告时，会把采集数据内嵌到下面这个空标签里（保持空标签形式便于脚本替换） -->
-<script id="embedded" type="text/plain">
-@@@BEGIN
+<script id="embedded" type="text/plain">
+@@@BEGIN
 @@@BATCH 2026-09-16 13:36:51 | IP 172.20.1.94
 @@@FILE bt_rssi_D0_51_DB_6A_8F_08.csv
 # DEV= MAC=D0:51:DB:6A:8F:08
@@ -83143,7 +83143,7 @@
 13:52:20  RSSI = -30 dBm
 13:52:21  RSSI = -32 dBm
 13:52:22  RSSI = -19 dBm
-@@@END
+@@@END
 </script>
 
 <script>
@@ -83595,6 +83595,7 @@ function drawChart(stats){
   var c=chartCanvas(), ctx=c.ctx, W=c.W, H=c.H;
   var sc=chartScales(stats,W,H);
   ctx.clearRect(0,0,W,H);
+  window.__MIN_MARKS={};  // 记录各系列「全程最弱点」索引，供悬停吸附用
   var plotW=W-sc.padL-sc.padR, plotH=H-sc.padT-sc.padB;
 
   // 质量分区底色
@@ -83666,6 +83667,7 @@ function drawChart(stats){
     }
     // 最弱点标记
     var mn=st; for(var q=st+1;q<=en;q++) if(pts[q].v<pts[mn].v) mn=q;
+    window.__MIN_MARKS[x.d.name]=mn;
     ctx.beginPath(); ctx.arc(sc.X(mn), sc.Y(pts[mn].v), 4.5, 0, 6.3);
     ctx.fillStyle="rgba(220,38,38,.9)"; ctx.fill();
     ctx.fillStyle="#dc2626"; ctx.font="bold 10px 'Segoe UI'"; ctx.textAlign="center";
@@ -83741,17 +83743,42 @@ function drawChart(stats){
     if(mx<padL-6||mx>rect.width-sc.padR+6||my<sc.padT||my>430-sc.padB){ tip.style.display="none"; if(hoverIdx!==-1){ hoverIdx=-1; drawChart(stats); } return; }
     var idx=viewA+Math.round((mx-padL)/plotW*(viewB-viewA));
     idx=Math.max(viewA, Math.min(viewB, idx));
+    /* 一个像素可能覆盖几十个采样点：计算半像素覆盖的索引数 */
+    var ppp=(viewB-viewA)/Math.max(1,plotW);
+    var half=Math.max(0, Math.round(ppp/2));
+    /* 吸附：光标 ±3 像素内含「全程最弱点」标记时，吸附到该点，让红点可精确悬停 */
+    var snapR=Math.max(half+1, Math.ceil(ppp*3));
+    var marks=window.__MIN_MARKS||{}, snapTo=-1, bestD=1e9;
+    for(var mk in marks){
+      var mi=marks[mk];
+      if(mi>=viewA && mi<=viewB && Math.abs(mi-idx)<=snapR){
+        var d=Math.abs(mi-idx);
+        if(d<bestD){ bestD=d; snapTo=mi; }
+      }
+    }
+    var snapped=(snapTo>=0);
+    if(snapped) idx=snapTo;
     if(idx!==hoverIdx){ hoverIdx=idx; drawChart(stats); }
     var t=null, rows="";
+    var i0=Math.max(viewA, idx-half), i1=Math.min(viewB, idx+half);
     stats.forEach(function(x){
       if(hidden[x.d.name]) return;
       var p=x.d.points[idx];
       if(!p) return;
       if(t===null) t=p.t;
+      /* 像素内覆盖多个点时，附带局部最低~最高，避免"显示值和红点对不上"的困惑 */
+      var extra="";
+      if(i1>i0){
+        var lo=p.v, hi=p.v;
+        for(var q=i0;q<=i1;q++){ var pp=x.d.points[q]; if(pp){ if(pp.v<lo)lo=pp.v; if(pp.v>hi)hi=pp.v; } }
+        if(lo!==hi) extra=' <span style="color:#9db1d0;font-weight:400">('+lo+'~'+hi+')</span>';
+      }
       rows+='<div class="row"><i style="background:'+PALETTE[series.indexOf(x.d)%PALETTE.length]+'"></i>'+
-            x.d.name+' <b style="color:'+cellColor(p.v)+'">'+p.v+' dBm</b></div>';
+            x.d.name+' <b style="color:'+cellColor(p.v)+'">'+p.v+' dBm</b>'+extra+'</div>';
     });
-    tip.innerHTML='<div class="tt">'+(fmtT(t)?("时间 "+fmtT(t)):("第 "+(idx+1)+" 个样点"))+'</div>'+rows;
+    var tt=(fmtT(t)?("时间 "+fmtT(t)):("第 "+(idx+1)+" 个样点"));
+    if(snapped) tt+='　※ 全程最弱点';
+    tip.innerHTML='<div class="tt">'+tt+'</div>'+rows;
     tip.style.display="block";
     var tx=mx+16, ty=my+14;
     if(tx+tip.offsetWidth>rect.width-8) tx=mx-tip.offsetWidth-14;
