@@ -92689,7 +92689,8 @@ document.getElementById("bsel").onchange=function(){ selectBatch(+this.value); }
       var row=document.createElement("div"); row.className="qdev";
       var mac=document.createElement("span"); mac.className="mac"; mac.textContent=d.mac;
       var r=document.createElement("span"); r.className="rssi";
-      r.innerHTML='<b style="color:'+c+'">'+d.rssi+' dBm</b> <span style="font-size:12px;color:'+c+'">'+lb+'</span>';
+      var stat = (d.n && d.n>1) ? ' ｜ 均值 '+d.avg+'（'+d.min+'~'+d.max+'，'+d.n+' 次采样）' : '';
+      r.innerHTML='<b style="color:'+c+'">'+d.rssi+' dBm</b>'+stat+' <span style="font-size:12px;color:'+c+'">'+lb+'</span>';
       row.appendChild(mac); row.appendChild(r);
       qdevs.appendChild(row);
     });
@@ -92702,13 +92703,14 @@ document.getElementById("bsel").onchange=function(){ selectBatch(+this.value); }
 
   qgo.onclick=function(){
     var ip=valIP();
-    qgo.disabled=true; setStatus("正在查询 "+ip+" 的实时信号 ...");
-    call("/once", ip?("ip="+encodeURIComponent(ip)):"")
+    qgo.disabled=true; setStatus("正在采样 "+(ip||"默认机器")+" 的信号（约 10 秒，请稍候）...");
+    call("/once", (ip?("ip="+encodeURIComponent(ip)):"")+"&dur=10")
       .then(function(j){
         qgo.disabled=false;
         if(j.ok){
           var savedOk = j.saved && j.saved.indexOf("已入库")===0;
-          setStatus(savedOk ? "查询成功 ｜ 已入库推送，约 1 分钟后本页自动刷新出最新曲线" : "查询成功", "ok");
+          var npts = 0; (j.devices||[]).forEach(function(d){ npts += (d.n||1); });
+          setStatus(savedOk ? "查询成功 ｜ "+npts+" 个采样点已入库推送，约 1 分钟后本页自动刷新出曲线" : "查询成功", "ok");
           showResult(j.ip, j.time, j.devices, j.saved);
           if(savedOk && !window.__qReloadTimer){ window.__qReloadTimer=setTimeout(function(){ location.href=location.pathname+"?t="+Date.now(); }, 55000); }
         }
